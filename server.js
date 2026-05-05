@@ -1,10 +1,14 @@
 const express = require("express");
 const app = express();
-app.use(express.json());
 
-const playerData = {};
+app.use(express.json({ limit: "10mb" }));
+
 const SECRET_KEY = process.env.SECRET_KEY || "siamcamp2025";
 
+// 💾 เก็บข้อมูล
+const playerData = {};
+
+// 🔐 auth
 function auth(req, res, next) {
     const key = req.headers["x-secret-key"];
     if (key !== SECRET_KEY) {
@@ -13,57 +17,70 @@ function auth(req, res, next) {
     next();
 }
 
-// POST /save - แมพเก่าส่งข้อมูลมาเก็บ
+// 🔥 merge function (กัน data หาย)
+function deepMerge(target, source) {
+    for (const key in source) {
+        if (
+            typeof source[key] === "object" &&
+            source[key] !== null &&
+            !Array.isArray(source[key])
+        ) {
+            if (!target[key]) target[key] = {};
+            deepMerge(target[key], source[key]);
+        } else {
+            target[key] = source[key];
+        }
+    }
+}
+
+// ================== SAVE ==================
 app.post("/save", auth, (req, res) => {
     const { userId, data } = req.body;
+
     if (!userId || data === undefined) {
         return res.status(400).json({ error: "Missing userId or data" });
     }
-    playerData[userId] = data;
-    console.log(`[SAVE] key=${userId}`);
+
+    if (!playerData[userId]) {
+        playerData[userId] = {};
+    }
+
+    deepMerge(playerData[userId], data);
+
+    console.log("✅ SAVE:", userId);
+    console.log("DATA:", JSON.stringify(playerData[userId], null, 2));
+
     res.json({ success: true });
 });
 
-// GET /load/:userId - แมพใหม่ดึงข้อมูล
+// ================== LOAD ==================
 app.get("/load/:userId", auth, (req, res) => {
-    const userId = decodeURIComponent(req.params.userId);
+    const userId = req.params.userId;
     const data = playerData[userId];
-    if (data === undefined) {
+
+    if (!data) {
         return res.status(404).json({ error: "Not found" });
     }
-    console.log(`[LOAD] key=${userId}`);
+
+    console.log("📥 LOAD:", userId);
+
     res.json({ success: true, data });
 });
 
-// GET /keys/:storeName - ดึงรายการ keys ของ store นั้น
-app.get("/keys/:storeName", auth, (req, res) => {
-    const storeName = req.params.storeName;
-    const prefix = storeName + ":";
-    const keys = Object.keys(playerData)
-        .filter(k => k.startsWith(prefix))
-        .map(k => k.slice(prefix.length));
-    console.log(`[KEYS] store=${storeName} count=${keys.length}`);
-    res.json({ success: true, keys });
+// ================== DEBUG ==================
+app.get("/debug/:userId", auth, (req, res) => {
+    res.json(playerData[req.params.userId] || {});
 });
 
-// GET /allkeys - ดึง keys ทั้งหมด
-app.get("/allkeys", auth, (req, res) => {
-    const keys = Object.keys(playerData);
-    console.log(`[ALLKEYS] count=${keys.length}`);
-    res.json({ success: true, keys });
-});
-
-// GET /count - ดูว่ามีข้อมูลกี่ keys
 app.get("/count", auth, (req, res) => {
     res.json({ count: Object.keys(playerData).length });
 });
 
-// GET / - Health check
 app.get("/", (req, res) => {
-    res.json({ status: "SiamCamp API Server Running ✅" });
+    res.send("🚀 API READY");
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+    console.log("🔥 API RUNNING");
 });
